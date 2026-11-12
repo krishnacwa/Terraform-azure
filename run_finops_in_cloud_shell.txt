@@ -1,0 +1,124 @@
+AZURE FINOPS SCRIPT: COMMANDS FOR AZURE CLOUD SHELL (BASH)
+=============================================================
+
+Before you start
+- Open Azure Cloud Shell in the portal and choose Bash.
+- Upload finops_azure_collect_and_report.py with Manage files > Upload.
+- Cloud Shell without a storage account loses all files when the session ends.
+  Download your results and cache.zip before it closes.
+
+
+STEP 1. PREPARE
+---------------
+cd ~
+mv "finops_azure_collect_and_report (1).py" finops.py
+ls -l finops.py
+python3 --version
+az account show --query name -o tsv
+pip install --user pandas openpyxl requests
+
+Notes
+- Skip the "mv" line if the uploaded file has no "(1)" in its name.
+  If it is named finops_azure_collect_and_report.py, use that name instead
+  of finops.py in every command below, or run:
+  mv finops_azure_collect_and_report.py finops.py
+- If "az account show" fails, sign in again:
+  az login --use-device-code
+
+
+STEP 2. QUICK TEST ON 3 SUBSCRIPTIONS
+-------------------------------------
+python3 -u finops.py --max-subs 3
+
+Expected: lines like [1/3] ..., then "Report written" and "Dashboard written".
+If you see errors, send them before running the full job.
+
+
+STEP 3. FULL RUN IN THE BACKGROUND
+----------------------------------
+nohup python3 -u finops.py --fy-history "2024=1200000,2025=1500000" --growth 5 > run.log 2>&1 &
+tail -f run.log
+
+Notes
+- Replace 1200000 and 1500000 with the client's invoice totals for 2024 and
+  2025, or remove the --fy-history "..." part if you do not have them.
+- --growth 5 assumes 5 percent yearly growth in the forecast. Use 0 for none.
+- Press Ctrl+C to stop watching the log. The script keeps running.
+- A full run can take 20 to 60 minutes or more.
+
+
+STEP 4. WHILE IT RUNS (check every 10 minutes to keep the session open)
+-----------------------------------------------------------------------
+tail -n 5 run.log
+ls finops_output/cache | wc -l
+jobs
+zip -r cache.zip finops_output/cache
+
+Then download cache.zip with Manage files > Download as a backup.
+
+What the log lines mean
+- [12/73] name (offer)        normal progress
+- HTTP 429; waiting 30s       Azure is throttling; the script retries by itself
+- svc_rg failed: HTTP 403     no cost access on that subscription; it is
+                              skipped and listed in the dashboard
+- Report written / Dashboard written    finished
+
+
+STEP 5. WHEN IT FINISHES
+------------------------
+Download these files with Manage files > Download:
+
+finops_output/FinOps_Dashboard.html
+finops_output/FinOps_Report.xlsx
+finops_output/errors.csv
+
+Open FinOps_Dashboard.html in any browser on your own PC.
+
+
+IF THE SESSION CLOSED OR THE SCRIPT STOPPED
+-------------------------------------------
+Open Cloud Shell, upload finops.py and your saved cache.zip, then run:
+
+cd ~
+unzip cache.zip
+pip install --user pandas openpyxl requests
+nohup python3 -u finops.py --fy-history "2024=1200000,2025=1500000" --growth 5 > run.log 2>&1 &
+tail -f run.log
+
+The script skips everything already saved and carries on.
+
+
+HANDY EXTRAS
+------------
+pkill -f finops.py                 stop the script
+python3 finops.py --report-only    rebuild the reports from saved data
+                                   without calling Azure
+rm -rf finops_output/cache         start fresh (do this before a new
+                                   monthly run)
+python3 finops.py --tag-keys ""    skip tag collection (fewer Azure calls)
+python3 finops.py --cost-type AmortizedCost
+                                   second report with reservation cost
+                                   spread over its term
+
+
+IF THE LOG STAYS EMPTY
+----------------------
+Use python3 -u (already in the commands above). It makes each line appear
+immediately. Then check:
+
+ps aux | grep finops.py | head -3
+az account get-access-token --resource https://management.azure.com --query expiresOn -o tsv
+
+If the second command errors, run: az login --use-device-code
+and start the script again.
+
+
+IF YOU CANNOT USE CLOUD SHELL
+-----------------------------
+Run it on your own PC instead (no time limit, nothing is lost):
+1. Install Python 3.9 or newer and the Azure CLI.
+2. Open PowerShell in the folder with finops.py and run:
+   pip install requests pandas openpyxl
+   az login
+   python finops.py --max-subs 3
+   python finops.py
